@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Domino Critical</title>
+    <title>Domino Critical V14</title>
     <!-- 物理演算ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
@@ -100,11 +100,11 @@
             pointer-events: auto;
             width: 90%;
             max-width: 400px;
-            background: rgba(10, 10, 10, 0.9);
+            background: rgba(10, 10, 10, 0.95);
             padding: 30px 20px;
             border-radius: 20px;
             border: 1px solid #444;
-            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            box-shadow: 0 0 40px rgba(0,255,204,0.1);
         }
 
         .btn-start {
@@ -132,6 +132,15 @@
             animation: floatUp 1.0s ease-out forwards;
         }
 
+        .new-record {
+            font-size: 24px;
+            color: #ff0055;
+            font-weight: 900;
+            text-shadow: 0 0 10px #ff0055;
+            margin-bottom: 10px;
+            animation: flash 0.5s infinite alternate;
+        }
+
         @keyframes pulse {
             0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 255, 204, 0.7); }
             70% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(0, 255, 204, 0); }
@@ -142,6 +151,11 @@
             0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
             10% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
             100% { transform: translate(-50%, -150%) scale(1.0); opacity: 0; }
+        }
+
+        @keyframes flash {
+            0% { opacity: 0.5; transform: scale(1); }
+            100% { opacity: 1; transform: scale(1.1); text-shadow: 0 0 20px #ff0055, 0 0 40px #ffcc00; }
         }
 
         .hidden { display: none !important; }
@@ -161,25 +175,28 @@
         <div id="message-area">
             <button id="start-btn" class="btn-start">TAP TO START</button>
             <div style="margin-top:15px; font-size:11px; color:#888;">
-                High Score Auto-Save Enabled
+                V14: REFRESHING SOUND
             </div>
         </div>
     </div>
 
 <script>
-    // --- 設定 ---
+    // --- CONFIG V14 ---
     const CONFIG = {
-        superJackpotChance: 0.001, 
-        miniJackpotChance: 0.01,   
-        x100Chance: 0.005,         
-        splitChance: 0.20,         
+        superJackpotChance: 0.001, // 0.1% (100個)
+        miniJackpotChance: 0.01,   // 1.0% (10個)
+        x1000Chance: 0.0002,       // 0.02% (x1000 GOD BALL)
+        x100Chance: 0.005,         // 0.5% (x100 BALL)
+        splitChance: 0.20,         // 20%
         
         ballSize: 4.5,
-        pegSize: 4.0, // 少し大きくして当たりやすく
+        pegSize: 4.0,
         gravity: 1.1,
-        bounciness: 0.8, // 永遠に跳ねるのを防ぐため少し下げる
+        bounciness: 0.8,
+        
         baseScore: 100,
-        x100Multiplier: 100 
+        x100Multiplier: 100,
+        x1000Multiplier: 1000
     };
 
     const PALETTE = [
@@ -194,7 +211,7 @@
 
     let engine, render, runner, world;
     let score = 0;
-    let highScore = parseInt(localStorage.getItem('domino_critical_highscore_v11')) || 0;
+    let highScore = parseInt(localStorage.getItem('domino_critical_highscore_v12')) || 0;
     
     let isPlaying = false;
     let hasStarted = false; 
@@ -212,7 +229,7 @@
 
     const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
 
-    // --- Sound ---
+    // --- Advanced Sound System (V14) ---
     const Sound = {
         init: () => {
             if (!audioCtx) {
@@ -221,59 +238,106 @@
             }
             if (audioCtx.state === 'suspended') audioCtx.resume();
         },
-        playTone: (noteIndex, waveType, isHighValue) => {
+        
+        // playTone: ball collisions
+        playTone: (noteIndex, waveType, ballType) => {
             if (!audioCtx) return;
-            if (!isHighValue) {
+            
+            // 間引き処理
+            const isRare = (ballType === 'x100' || ballType === 'x1000');
+            if (!isRare) {
                 if (ballCount > 100 && Math.random() < 0.7) return; 
             }
+
             const t = audioCtx.currentTime;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-            const baseFreq = isHighValue ? 220 : 523.25;
-            const freq = baseFreq * Math.pow(2, noteIndex / 12);
-            osc.type = waveType || 'sine';
-            osc.frequency.setValueAtTime(freq, t);
-            const duration = isHighValue ? 0.3 : 0.1;
-            gain.gain.setValueAtTime(isHighValue ? 0.3 : 0.05, t);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+
+            if (ballType === 'x1000') {
+                // GOD SOUND: Shimmering high sine
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(2000, t);
+                osc.frequency.exponentialRampToValueAtTime(1000, t + 0.3);
+                gain.gain.setValueAtTime(0.15, t);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+            } else if (ballType === 'x100') {
+                // REFRESHING SOUND: Positive Upsweep (Coin get!)
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(880, t);
+                osc.frequency.linearRampToValueAtTime(1760, t + 0.1); // 上昇音
+                gain.gain.setValueAtTime(0.2, t);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+            } else {
+                // NORMAL
+                const baseFreq = 523.25;
+                const freq = baseFreq * Math.pow(2, noteIndex / 12);
+                osc.type = waveType || 'sine';
+                osc.frequency.setValueAtTime(freq, t);
+                gain.gain.setValueAtTime(0.05, t);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+            }
+
             osc.connect(gain);
             gain.connect(audioCtx.destination);
             osc.start();
-            osc.stop(t + duration + 0.05);
+            osc.stop(t + 0.6);
         },
+
+        // playJackpot: Cyber & Futuristic
         playJackpot: (type) => {
             if (!audioCtx) return;
             const t = audioCtx.currentTime;
-            const osc = audioCtx.createOscillator();
-            const g = audioCtx.createGain();
-            
-            osc.connect(g);
-            g.connect(audioCtx.destination);
-            
+
+            // Helper for oscillators
+            const playOsc = (type, freq, start, dur, vol, slideTo = null) => {
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = type;
+                o.frequency.setValueAtTime(freq, start);
+                if (slideTo) {
+                    o.frequency.exponentialRampToValueAtTime(slideTo, start + dur);
+                }
+                g.gain.setValueAtTime(vol, start);
+                g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+                o.connect(g);
+                g.connect(audioCtx.destination);
+                o.start(start);
+                o.stop(start + dur + 0.1);
+            };
+
             if(type === 'super') {
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(100, t);
-                osc.frequency.exponentialRampToValueAtTime(5000, t + 1.0);
-                g.gain.setValueAtTime(0.3, t);
-                g.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
-                osc.start(t);
-                osc.stop(t+1.0);
+                // SUPER JACKPOT: Cyber Riser + Arpeggio
+                playOsc('sawtooth', 200, t, 1.2, 0.15, 4000);
+                
+                const notes = [880, 1108, 1318, 1760]; 
+                for(let i=0; i<16; i++) {
+                    playOsc('square', notes[i%4], t + i*0.06, 0.08, 0.08);
+                }
+                
+                playOsc('sine', 100, t, 1.5, 0.5, 30);
+
+            } else if (type === 'x1000') {
+                // GOD CHORD
+                const freqs = [523.25, 659.25, 783.99, 987.77, 1174.66];
+                freqs.forEach((f, i) => {
+                    playOsc('triangle', f, t, 2.0, 0.1); 
+                    playOsc('sine', f * 1.01, t, 2.0, 0.1); 
+                });
+                playOsc('sine', 2093.00, t, 2.5, 0.05);
+
             } else if (type === 'x100') {
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(50, t);
-                osc.frequency.linearRampToValueAtTime(100, t + 0.1);
-                g.gain.setValueAtTime(0.5, t);
-                g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-                osc.start(t);
-                osc.stop(t+0.5);
+                // REFRESHING SPAWN: Major Arpeggio (Lucky!)
+                // C E G C
+                const notes = [523.25, 659.25, 783.99, 1046.50]; 
+                notes.forEach((f, i) => {
+                     playOsc('sine', f, t + i*0.05, 0.2, 0.1);
+                });
+
             } else {
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(880, t);
-                osc.frequency.linearRampToValueAtTime(1760, t + 0.2);
-                g.gain.setValueAtTime(0.1, t);
-                g.gain.linearRampToValueAtTime(0, t + 0.2);
-                osc.start(t);
-                osc.stop(t+0.2);
+                // Mini Jackpot
+                playOsc('sine', 1046.50, t, 0.2, 0.1);
+                playOsc('sine', 1567.98, t+0.1, 0.3, 0.1); 
+                playOsc('square', 2093.00, t+0.2, 0.4, 0.05); 
             }
         }
     };
@@ -296,7 +360,6 @@
         });
         render.canvas.id = "game-canvas";
         
-        // ステージ初期生成（見栄え用）
         createStage();
 
         Events.on(engine, 'collisionStart', handleCollision);
@@ -309,25 +372,17 @@
         window.addEventListener('resize', () => {
             render.canvas.width = window.innerWidth;
             render.canvas.height = window.innerHeight;
-            // リサイズ時はプレイ中でなければ再生成してあげる
-            if(!isPlaying) {
-                createStage();
-            }
+            if(!isPlaying) createStage();
         });
 
         startBtn.addEventListener('click', startGame);
-        finishBtn.addEventListener('click', () => { 
-            if(isPlaying) endGame(); 
-        });
+        finishBtn.addEventListener('click', () => { if(isPlaying) endGame(); });
     }
 
-    // ステージ（ピンと壁）を一括生成する関数
     function createStage() {
-        // 既存のピンと壁を削除
         const bodies = Composite.allBodies(world);
         const stageBodies = bodies.filter(b => b.label === 'peg' || b.label === 'wall');
         Composite.remove(world, stageBodies);
-
         createPegs();
         createWalls();
     }
@@ -335,7 +390,6 @@
     function createPegs() {
         const width = window.innerWidth;
         const height = window.innerHeight;
-        // 幅が極端に狭い場合の安全策
         if (width < 100) return;
 
         const cols = Math.floor(width / 30); 
@@ -350,12 +404,10 @@
                 
                 if (x > 20 && x < width - 20) {
                     const peg = Bodies.circle(x, y, CONFIG.pegSize, {
-                        isStatic: true, 
-                        label: 'peg', 
-                        restitution: 0.8, 
+                        isStatic: true, label: 'peg', restitution: 0.8, 
                         render: { 
-                            fillStyle: '#004444', // 暗い青緑（常時見えるように）
-                            strokeStyle: '#00ffcc', // ネオンカラーの枠線
+                            fillStyle: '#004444', 
+                            strokeStyle: '#00ffcc', 
                             lineWidth: 2
                         }
                     });
@@ -368,7 +420,6 @@
     function createWalls() {
         const w = window.innerWidth;
         const h = window.innerHeight;
-        // 壁（見えないけどある）
         const opts = { isStatic: true, label: 'wall', render: { visible: false } }; 
         Composite.add(world, [
             Bodies.rectangle(0, h/2, 20, h, opts),
@@ -379,10 +430,7 @@
     function startGame() {
         if (isPlaying) return;
         Sound.init();
-        
         cleanupBalls();
-        
-        // 重要：スタート時に必ずステージを再構築する（サイズズレ防止）
         createStage();
         
         score = 0;
@@ -402,26 +450,30 @@
     function cleanupBalls() {
         const bodies = Composite.allBodies(world);
         const balls = bodies.filter(b => b.label === 'ball');
-        if(balls.length > 0) {
-            Composite.remove(world, balls);
-        }
+        if(balls.length > 0) Composite.remove(world, balls);
     }
 
     function spawnBall(x, y, type = 'normal') {
         if (!isPlaying) return;
 
         let style;
-        let isX100 = false;
+        let ballType = type; // normal, x100, x1000
         
         if (type === 'master') {
             style = { color: '#ffffff', note: 12, type: 'square' };
+            ballType = 'normal'; // マスターボール自体の性能は普通
         } else if (type === 'super') {
             style = { color: '#ffffff', note: 14, type: 'sawtooth' }; 
+            ballType = 'normal'; // エフェクト用
         } else if (type === 'mini') {
             style = { color: '#ffcc00', note: 9, type: 'square' }; 
+            ballType = 'normal';
+        } else if (type === 'x1000') {
+            // GOD BALL STYLE
+            style = { color: '#aa00ff', note: 20, type: 'sine' }; // Purple
         } else if (type === 'x100') {
-            style = { color: '#ff0000', note: -5, type: 'sawtooth' };
-            isX100 = true;
+            // X100 BALL STYLE
+            style = { color: '#ff0000', note: -5, type: 'sawtooth' }; // Red
         } else {
             style = PALETTE[Math.floor(Math.random() * PALETTE.length)];
         }
@@ -433,11 +485,13 @@
             label: 'ball',
             render: { 
                 fillStyle: style.color,
-                strokeStyle: isX100 ? '#ffff00' : 'transparent',
-                lineWidth: isX100 ? 2 : 0
+                strokeStyle: (ballType === 'x1000') ? '#ffffff' : (ballType === 'x100' ? '#ffff00' : 'transparent'),
+                lineWidth: (ballType === 'x1000' || ballType === 'x100') ? 2 : 0
             },
             plugin: { 
-                note: style.note, wave: style.type, isX100: isX100
+                note: style.note, 
+                wave: style.type, 
+                ballType: ballType
             }
         });
 
@@ -458,6 +512,8 @@
         
         if(type === 'super') {
             div.style.fontSize = '36px'; div.style.color = '#fff'; div.style.textShadow = '0 0 20px gold';
+        } else if (type === 'x1000') {
+            div.style.fontSize = '40px'; div.style.color = '#aa00ff'; div.style.textShadow = '0 0 20px #fff';
         } else if (type === 'x100') {
             div.style.fontSize = '28px'; div.style.color = '#ff0000'; div.style.textShadow = '0 0 10px yellow';
         } else if (type === 'mini') {
@@ -466,7 +522,7 @@
             div.style.fontSize = '16px'; div.style.color = '#fff';
         }
         document.body.appendChild(div);
-        setTimeout(() => div.remove(), 1000);
+        setTimeout(() => div.remove(), 1200);
     }
 
     function handleCollision(event) {
@@ -481,17 +537,23 @@
                 const ball = bodyA.label === 'ball' ? bodyA : bodyB;
                 const peg = bodyA.label === 'peg' ? bodyA : bodyB;
 
+                // --- Score & Sound ---
                 let hitScore = CONFIG.baseScore;
-                if (ball.plugin && ball.plugin.isX100) {
+                const bType = ball.plugin ? ball.plugin.ballType : 'normal';
+
+                if (bType === 'x1000') {
+                    hitScore = CONFIG.baseScore * CONFIG.x1000Multiplier;
+                } else if (bType === 'x100') {
                     hitScore = CONFIG.baseScore * CONFIG.x100Multiplier;
-                    Sound.playTone(ball.plugin.note, 'sawtooth', true);
-                } else {
-                    if(ball.plugin) Sound.playTone(ball.plugin.note, ball.plugin.wave, false);
                 }
+                
+                // Play sound (pass ballType)
+                if(ball.plugin) Sound.playTone(ball.plugin.note, ball.plugin.wave, bType);
+                
                 score += hitScore;
 
-                if (Math.random() > 0.6) {
-                    // ピンを一時的に明るくする
+                // Visual Bounce
+                if (Math.random() > 0.6 || bType === 'x1000') {
                     peg.render.fillStyle = ball.render.fillStyle;
                     peg.render.strokeStyle = '#fff';
                     setTimeout(() => { 
@@ -500,9 +562,10 @@
                     }, 100);
                 }
 
+                // --- Gacha Logic ---
                 const rand = Math.random();
-                const spawnType = (ball.plugin && ball.plugin.isX100) ? 'x100' : 'normal';
-
+                
+                // 1. SUPER JACKPOT (0.1%)
                 if (rand < CONFIG.superJackpotChance) {
                     Sound.playJackpot('super');
                     score += 100000;
@@ -512,29 +575,39 @@
                         if (!isPlaying) return; 
                         for(let k=0; k<5; k++) { 
                             if(created >= 100) return;
-                            spawnBall(ball.position.x, ball.position.y, spawnType === 'x100' ? 'x100' : 'super');
+                            const spawnT = (bType !== 'normal' && Math.random() < 0.1) ? bType : 'super';
+                            spawnBall(ball.position.x, ball.position.y, spawnT);
                             created++;
                         }
                         if(created < 100) requestAnimationFrame(burst);
                     };
                     burst();
                 } 
-                else if (rand < CONFIG.superJackpotChance + CONFIG.x100Chance) {
+                // 2. x1000 GOD BALL (0.02%)
+                else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance) {
+                    Sound.playJackpot('x1000');
+                    showFloatingText("GOD BALL x1000", ball.position.x, ball.position.y, 'x1000');
+                    spawnBall(ball.position.x, ball.position.y, 'x1000');
+                }
+                // 3. x100 BALL (0.5%)
+                else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance) {
                     Sound.playJackpot('x100');
                     showFloatingText("x100 BALL!!", ball.position.x, ball.position.y, 'x100');
                     spawnBall(ball.position.x, ball.position.y, 'x100');
                 }
-                else if (rand < CONFIG.superJackpotChance + CONFIG.x100Chance + CONFIG.miniJackpotChance) {
+                // 4. MINI JACKPOT (1.0%)
+                else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance + CONFIG.miniJackpotChance) {
                     Sound.playJackpot('mini');
                     score += 5000;
                     showFloatingText("LUCKY 10!", ball.position.x, ball.position.y, 'mini');
                     for(let i=0; i<10; i++) {
-                        spawnBall(ball.position.x, ball.position.y, spawnType === 'x100' ? 'x100' : 'mini');
+                        spawnBall(ball.position.x, ball.position.y, bType === 'normal' ? 'mini' : bType);
                     }
                 }
-                else if (rand < CONFIG.superJackpotChance + CONFIG.x100Chance + CONFIG.miniJackpotChance + CONFIG.splitChance) {
+                // 5. NORMAL SPLIT (20%)
+                else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance + CONFIG.miniJackpotChance + CONFIG.splitChance) {
                     score += 500;
-                    spawnBall(ball.position.x, ball.position.y, spawnType);
+                    spawnBall(ball.position.x, ball.position.y, bType);
                 }
             }
         });
@@ -559,34 +632,34 @@
         }
         
         ballCount = currentBallCount;
-
-        if (hasStarted && ballCount === 0) {
-            endGame();
-        }
-        
+        if (hasStarted && ballCount === 0) endGame();
         if (engine.timing.timestamp % 200 < 20) updateUI();
     }
 
     function endGame() {
         if (!isPlaying) return;
         isPlaying = false; 
-        
         finishBtn.style.display = 'none'; 
 
+        // ハイスコア判定
+        let isNewRecord = false;
         if (score > highScore) {
             highScore = score;
-            localStorage.setItem('domino_critical_highscore_v11', highScore);
+            localStorage.setItem('domino_critical_highscore_v12', highScore);
             highScoreEl.textContent = Number(highScore).toLocaleString();
+            isNewRecord = true;
         }
 
         startBtn.textContent = "RETRY";
-        
         msgArea.innerHTML = '';
         msgArea.appendChild(startBtn);
         
+        // NEW RECORD演出
+        let recordHtml = isNewRecord ? '<div class="new-record">NEW RECORD!!</div>' : '<div style="margin-top:20px; font-size:14px; color:#aaa;">RESULT</div>';
+        
         const resDiv = document.createElement('div');
         resDiv.innerHTML = `
-            <div style="margin-top:20px; font-size:14px; color:#aaa;">RESULT</div>
+            ${recordHtml}
             <div style="font-size:36px; color:#fff; font-weight:bold; text-shadow:0 0 10px #00ffcc;">${score.toLocaleString()}</div>
         `;
         msgArea.appendChild(resDiv);
