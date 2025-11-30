@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Domino Critical V31</title>
+    <title>Domino Critical V33</title>
     <!-- 物理演算ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
@@ -22,7 +22,6 @@
             user-select: none;
             -webkit-user-select: none;
             position: relative;
-            /* 背景色の変化をアニメーションさせない（即時切り替えだと目が疲れる場合はtransitionを残すが、今回は軽量化優先で最低限に） */
             transition: background-color 0.5s; 
         }
 
@@ -45,12 +44,10 @@
             height: 100%;
             left: 0;
             top: 0;
-            /* グリッドを静止画として描画（アニメーションなし） */
             background-image: 
                 linear-gradient(rgba(0, 255, 204, 0.1) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(0, 255, 204, 0.1) 1px, transparent 1px);
             background-size: 50px 50px;
-            /* 3D回転も削除して平面描画（軽量化） */
             opacity: 0.5;
         }
 
@@ -62,9 +59,8 @@
             z-index: 1;
         }
 
-        /* FEVER時は背景色とグリッド色を変えるだけ（アニメーションなし） */
         body.fever-mode {
-            background-color: #220011; /* 暗い赤紫 */
+            background-color: #220011; 
         }
         body.fever-mode .grid-plane {
             background-image: 
@@ -120,7 +116,6 @@
             text-transform: uppercase;
             z-index: 9999;
             display: none; 
-            /* チラつき防止のため影や複雑な装飾を削除 */
         }
         #force-finish-btn:active { background: rgba(200, 0, 50, 1); }
 
@@ -128,7 +123,6 @@
             font-size: 40px;
             font-weight: 900;
             color: #00ffcc;
-            /* テキストシャドウを軽減して描画負荷を下げる */
             text-shadow: 1px 1px 0 #000;
             letter-spacing: 1px;
             font-variant-numeric: tabular-nums;
@@ -144,6 +138,7 @@
             text-transform: uppercase;
         }
 
+        /* リザルト画面 */
         #message-area {
             position: absolute;
             top: 50%;
@@ -152,29 +147,31 @@
             text-align: center;
             pointer-events: auto;
             width: 90%;
-            max-width: 400px;
-            background: rgba(10, 10, 10, 0.95);
-            padding: 20px;
-            border-radius: 10px;
-            border: 1px solid #444;
+            max-width: 420px;
+            background: rgba(15, 15, 20, 0.98);
+            padding: 25px;
+            border-radius: 16px;
+            border: 2px solid #444;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
             display: flex;
             flex-direction: column;
             align-items: center;
+            z-index: 100;
         }
 
         .btn-start {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: bold;
             color: #000;
             background: #00ffcc;
-            padding: 15px 40px;
+            padding: 12px 40px;
             border-radius: 30px;
             border: none;
             cursor: pointer;
             text-transform: uppercase;
             white-space: nowrap;
-            margin-top: 15px;
-            /* アニメーション削除 */
+            margin-top: 20px;
+            width: 100%;
         }
 
         .jackpot-text {
@@ -184,16 +181,15 @@
             text-shadow: 1px 1px 0 #000;
             white-space: nowrap;
             z-index: 100;
-            /* 必要最低限のアニメーション */
             animation: floatUp 0.8s ease-out forwards;
         }
 
         .new-record {
-            font-size: 24px;
+            font-size: 20px;
             color: #ff0055;
             font-weight: 900;
             margin-bottom: 5px;
-            /* 点滅削除 */
+            letter-spacing: 2px;
         }
         
         #fever-indicator {
@@ -211,7 +207,6 @@
             font-size: 64px;
             font-weight: 900;
             color: #ffcc00;
-            /* アニメーション削除 */
         }
         
         #fever-timer {
@@ -234,7 +229,50 @@
             display: block;
         }
 
-        /* 唯一残すフロートアニメーション（これがないと文字が重なり続けるため） */
+        /* 統計情報 */
+        .stats-container {
+            width: 100%;
+            margin-top: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            box-sizing: border-box;
+        }
+
+        .total-balls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+        }
+        .total-balls .label { color: #ccc; font-weight: bold; font-size: 14px; }
+        .total-balls .value { color: #00ffcc; font-size: 22px; font-weight: 900; font-family: 'Courier New', monospace; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px 20px;
+            width: 100%;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 4px;
+        }
+
+        .stat-label { color: #888; font-size: 12px; text-transform: uppercase; }
+        .stat-value { font-weight: bold; color: #fff; font-size: 16px; font-family: 'Courier New', monospace; }
+        .stat-value.god { color: #d0f; text-shadow: 0 0 5px rgba(221, 0, 255, 0.5); font-size: 18px; }
+        .stat-value.rare { color: #fc0; }
+
         @keyframes floatUp {
             0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
             100% { transform: translate(-50%, -150%) scale(1.0); opacity: 0; }
@@ -267,22 +305,25 @@
         <div id="message-area">
             <button id="start-btn" class="btn-start">TAP TO START</button>
             <div style="margin-top:15px; font-size:11px; color:#888;">
-                V31: STATIC & LITE
+                V33: SUPER JP 50 & LITE PHYSICS
             </div>
         </div>
     </div>
 
 <script>
-    // --- CONFIG V31 ---
+    // --- CONFIG V33 ---
     const CONFIG = {
-        // 確率は V28 (Reverted) を維持
+        // 確率
         superJackpotChance: 0.0005, // 0.05%
         miniJackpotChance: 0.01,    // 1.0%
         x1000Chance: 0.0002,        // 0.02%
         x100Chance: 0.005,          // 0.5%
-        
         splitChance: 0.20,         
         
+        // Super JP個数調整
+        superJackpotCount: 50,      // 100 -> 50 に減量して軽量化
+        
+        // FEVER
         feverBaseDuration: 1000,
         feverMaxDuration: 10000,
         feverRefillInterval: 500,   
@@ -330,6 +371,9 @@
     let feverRefillTimer = 0;
     let currentFeverMultiplier = 1;
     let feverExtendCount = 0;
+    
+    // 軽量化用フレームカウンタ
+    let frameCounter = 0;
 
     let gameStats = {
         totalBalls: 0,
@@ -376,7 +420,8 @@
             
             const isRare = (ballType === 'x100' || ballType === 'x1000');
             
-            if (!isRare && (now - Sound.lastPlayTime < 0.05)) {
+            // サウンドスロットリング (さらに少し厳しく調整)
+            if (!isRare && (now - Sound.lastPlayTime < 0.06)) {
                 return;
             }
             Sound.lastPlayTime = now;
@@ -565,10 +610,11 @@
     };
 
     function init() {
-        // --- 物理演算の軽量化 ---
+        // --- 物理演算の超軽量化 ---
         engine = Engine.create({
-            positionIterations: 5,
-            velocityIterations: 3
+            positionIterations: 4, // 5->4
+            velocityIterations: 2, // 3->2
+            enableSleeping: true   // スリープ有効化（重要）
         });
         world = engine.world;
         engine.gravity.y = CONFIG.gravity;
@@ -704,7 +750,7 @@
 
         if (!isFever) {
             Sound.startFeverBGM();
-            feverRefillTimer = 0; // タイマーリセット
+            feverRefillTimer = 0; 
         }
 
         feverTimeRemaining += CONFIG.feverBaseDuration;
@@ -879,12 +925,14 @@
                     let created = 0;
                     const burst = () => {
                         if (!isPlaying) return; 
+                        // Super JP個数調整 (50)
                         for(let k=0; k<5; k++) { 
+                            if(created >= CONFIG.superJackpotCount) return;
                             const spawnT = (bType !== 'normal' && Math.random() < 0.1) ? bType : 'super';
                             spawnBall(ball.position.x, ball.position.y, spawnT);
                             created++;
                         }
-                        if(created < 100) requestAnimationFrame(burst);
+                        if(created < CONFIG.superJackpotCount) requestAnimationFrame(burst);
                     };
                     burst();
                 } 
@@ -926,6 +974,10 @@
     function handleGameLoop() {
         if (!isPlaying) return;
 
+        // --- 軽量化されたループ ---
+        // 全ボディ走査を毎フレーム行わず、間引く (5フレームに1回)
+        frameCounter++;
+        
         if (isFever) {
             feverTimeRemaining -= engine.timing.lastDelta;
             feverRefillTimer += engine.timing.lastDelta;
@@ -941,25 +993,27 @@
             }
         }
 
-        const bodies = Composite.allBodies(world);
-        const h = window.innerHeight;
-        let currentBallCount = 0;
-        
-        for (let i = 0; i < bodies.length; i++) {
-            const b = bodies[i];
-            if (b.label === 'ball') {
-                if(b.position.y > h + 10) {
-                    Composite.remove(world, b);
-                } else {
-                    currentBallCount++;
+        // 間引き処理
+        if (frameCounter % 5 === 0) {
+            const bodies = Composite.allBodies(world);
+            const h = window.innerHeight;
+            let count = 0;
+            
+            for (let i = 0; i < bodies.length; i++) {
+                const b = bodies[i];
+                if (b.label === 'ball') {
+                    if(b.position.y > h + 50) {
+                        Composite.remove(world, b);
+                    } else {
+                        count++;
+                    }
                 }
             }
-        }
-        
-        ballCount = currentBallCount;
-        
-        if (hasStarted && ballCount === 0 && !isFever) {
-            endGame();
+            ballCount = count;
+            
+            if (hasStarted && ballCount === 0 && !isFever) {
+                endGame();
+            }
         }
         
         if (engine.timing.timestamp % 50 < 20) {
@@ -989,16 +1043,22 @@
         let recordHtml = isNewRecord ? '<div class="new-record">NEW RECORD!!</div>' : '<div style="margin-top:5px; font-size:14px; color:#aaa; font-weight:bold;">RESULT</div>';
         
         const resDiv = document.createElement('div');
+        resDiv.style.width = '100%';
         resDiv.innerHTML = `
             ${recordHtml}
-            <div style="font-size:36px; color:#fff; font-weight:bold; text-shadow:0 0 10px #00ffcc; margin-bottom:10px;">${score.toLocaleString()}</div>
+            <div style="font-size:42px; color:#fff; font-weight:900; text-shadow:0 0 15px #00ffcc; margin:10px 0; letter-spacing:1px;">${score.toLocaleString()}</div>
             
-            <div class="stats-grid">
-                <div class="stat-item"><span class="stat-label">Total Balls</span><span class="stat-value">${gameStats.totalBalls.toLocaleString()}</span></div>
-                <div class="stat-item"><span class="stat-label">God Ball</span><span class="stat-value god">${gameStats.god}</span></div>
-                <div class="stat-item"><span class="stat-label">Super JP</span><span class="stat-value rare">${gameStats.superJp}</span></div>
-                <div class="stat-item"><span class="stat-label">x100 Ball</span><span class="stat-value rare">${gameStats.x100}</span></div>
-                <div class="stat-item"><span class="stat-label">Mini JP</span><span class="stat-value">${gameStats.mini}</span></div>
+            <div class="stats-container">
+                <div class="total-balls">
+                    <span class="label">TOTAL BALLS</span>
+                    <span class="value">${gameStats.totalBalls.toLocaleString()}</span>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-item"><span class="stat-label">God (x1000)</span><span class="stat-value god">${gameStats.god}</span></div>
+                    <div class="stat-item"><span class="stat-label">Super JP</span><span class="stat-value rare">${gameStats.superJp}</span></div>
+                    <div class="stat-item"><span class="stat-label">x100 Ball</span><span class="stat-value rare">${gameStats.x100}</span></div>
+                    <div class="stat-item"><span class="stat-label">Mini JP</span><span class="stat-value">${gameStats.mini}</span></div>
+                </div>
             </div>
         `;
         msgArea.appendChild(resDiv);
