@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Domino Critical V22</title>
+    <title>Domino Critical V23</title>
     <!-- 物理演算ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
@@ -27,7 +27,7 @@
 
         /* 確変モード時の背景アニメーション */
         body.fever-mode {
-            animation: fever-bg 0.23s infinite alternate; /* BPMに合わせて少し早く */
+            animation: fever-bg 0.23s infinite alternate;
         }
 
         @keyframes fever-bg {
@@ -112,10 +112,13 @@
             width: 90%;
             max-width: 400px;
             background: rgba(10, 10, 10, 0.95);
-            padding: 30px 20px;
+            padding: 20px;
             border-radius: 20px;
             border: 1px solid #444;
             box-shadow: 0 0 40px rgba(0,255,204,0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .btn-start {
@@ -131,7 +134,30 @@
             animation: pulse 1.5s infinite;
             text-transform: uppercase;
             white-space: nowrap;
+            margin-top: 15px;
         }
+
+        /* 統計情報のスタイル */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 20px;
+            margin-top: 15px;
+            width: 100%;
+            font-size: 14px;
+            color: #ccc;
+            text-align: left;
+        }
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #333;
+            padding-bottom: 2px;
+        }
+        .stat-label { color: #888; }
+        .stat-value { font-weight: bold; color: #fff; }
+        .stat-value.rare { color: #ffcc00; }
+        .stat-value.god { color: #aa00ff; text-shadow: 0 0 5px #aa00ff; }
 
         .jackpot-text {
             position: absolute;
@@ -148,11 +174,10 @@
             color: #ff0055;
             font-weight: 900;
             text-shadow: 0 0 10px #ff0055;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
             animation: flash 0.5s infinite alternate;
         }
         
-        /* 確変中の表示テキスト */
         #fever-indicator {
             position: absolute;
             top: 35%;
@@ -236,13 +261,13 @@
         <div id="message-area">
             <button id="start-btn" class="btn-start">TAP TO START</button>
             <div style="margin-top:15px; font-size:11px; color:#888;">
-                V22: FEVER +1s (MAX 10s)
+                V23: RESULT STATS
             </div>
         </div>
     </div>
 
 <script>
-    // --- CONFIG V22 ---
+    // --- CONFIG V23 ---
     const CONFIG = {
         superJackpotChance: 0.001, 
         miniJackpotChance: 0.01,   
@@ -252,8 +277,8 @@
         splitChance: 0.20,         
         
         // FEVER SETTINGS
-        feverBaseDuration: 1000,   // 1秒追加 (変更)
-        feverMaxDuration: 10000,   // Max cap 10s
+        feverBaseDuration: 1000,
+        feverMaxDuration: 10000,
         feverProbTable: [
             { mult: 2,    prob: 0.60 },
             { mult: 5,    prob: 0.30 },
@@ -296,7 +321,16 @@
     let isFever = false;
     let feverTimeRemaining = 0;
     let currentFeverMultiplier = 1;
-    let feverExtendCount = 0; // 上乗せ回数
+    let feverExtendCount = 0;
+
+    // Stats
+    let gameStats = {
+        totalBalls: 0,
+        god: 0,
+        superJp: 0,
+        x100: 0,
+        mini: 0
+    };
 
     const scoreEl = document.getElementById('score');
     const highScoreEl = document.getElementById('high-score');
@@ -312,7 +346,7 @@
 
     const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
 
-    // --- Sound System (Includes BGM) ---
+    // --- Sound System ---
     const Sound = {
         bgmNode: null,
         nextNoteTime: 0,
@@ -467,14 +501,14 @@
             if (!Sound.isPlayingBGM) return;
             while (Sound.nextNoteTime < audioCtx.currentTime + 0.1) {
                 Sound.playBeat(Sound.nextNoteTime, Sound.beatCount);
-                Sound.nextNoteTime += 60.0 / Sound.tempo / 4; // 16th notes
+                Sound.nextNoteTime += 60.0 / Sound.tempo / 4; 
                 Sound.beatCount++;
             }
             Sound.timerID = setTimeout(Sound.scheduler, 25);
         },
 
         playBeat: (time, beat) => {
-            // Kick (4/4)
+            // Kick
             if (beat % 4 === 0) {
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
@@ -488,14 +522,12 @@
                 osc.start(time);
                 osc.stop(time + 0.5);
             }
-
-            // Bass (Off-beat)
+            // Bass
             if ((beat + 2) % 4 === 0) {
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.type = 'sawtooth';
                 osc.frequency.setValueAtTime(60, time); 
-                // Low pass filter effect simulation by volume env
                 gain.gain.setValueAtTime(0.0, time);
                 gain.gain.linearRampToValueAtTime(0.2, time + 0.05);
                 gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
@@ -504,11 +536,9 @@
                 osc.start(time);
                 osc.stop(time + 0.3);
             }
-
-            // Hihat (16th notes)
+            // Hihat
             if (beat % 1 === 0) {
-                // Create buffer for noise
-                const bufferSize = audioCtx.sampleRate * 0.05; // 50ms
+                const bufferSize = audioCtx.sampleRate * 0.05; 
                 const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
                 const data = buffer.getChannelData(0);
                 for (let i = 0; i < bufferSize; i++) {
@@ -517,15 +547,9 @@
                 const noise = audioCtx.createBufferSource();
                 noise.buffer = buffer;
                 const gain = audioCtx.createGain();
-                
-                // Open hihat on off-beat, closed on on-beat
                 const vol = (beat % 2 === 0) ? 0.05 : 0.1;
                 gain.gain.setValueAtTime(vol, time);
                 gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
-                
-                // Simple Highpass filter equivalent
-                // (Web Audio BiquadFilterNode could be used here for better sound)
-                
                 noise.connect(gain);
                 gain.connect(audioCtx.destination);
                 noise.start(time);
@@ -635,6 +659,9 @@
         feverExtendCount = 0;
         document.body.classList.remove('fever-mode');
         
+        // Reset Stats
+        gameStats = { totalBalls: 0, god: 0, superJp: 0, x100: 0, mini: 0 };
+        
         updateUI();
         
         msgArea.classList.add('hidden');
@@ -663,18 +690,15 @@
             }
         }
 
-        // BGM Start if not playing
         if (!isFever) {
             Sound.startFeverBGM();
         }
 
-        // Add Time
         feverTimeRemaining += CONFIG.feverBaseDuration;
         if (feverTimeRemaining > CONFIG.feverMaxDuration) {
             feverTimeRemaining = CONFIG.feverMaxDuration;
         }
 
-        // Count Extension (only if already in fever or just starting)
         if (isFever) {
             feverExtendCount++;
         }
@@ -767,6 +791,9 @@
         });
 
         Composite.add(world, ball);
+        
+        // Count total balls
+        gameStats.totalBalls++;
     }
 
     function showFloatingText(text, x, y, type) {
@@ -832,6 +859,7 @@
                 const rand = Math.random();
                 
                 if (rand < CONFIG.superJackpotChance) {
+                    gameStats.superJp++;
                     Sound.playJackpot('super');
                     startFever(); 
                     score += 100000;
@@ -850,18 +878,21 @@
                     burst();
                 } 
                 else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance) {
+                    gameStats.god++;
                     Sound.playJackpot('x1000');
                     startFever(); 
                     showFloatingText("GOD BALL x1000", ball.position.x, ball.position.y, 'x1000');
                     spawnBall(ball.position.x, ball.position.y, 'x1000');
                 }
                 else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance) {
+                    gameStats.x100++;
                     Sound.playJackpot('x100');
                     startFever(); 
                     showFloatingText("x100 BALL!!", ball.position.x, ball.position.y, 'x100');
                     spawnBall(ball.position.x, ball.position.y, 'x100');
                 }
                 else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance + CONFIG.miniJackpotChance) {
+                    gameStats.mini++;
                     Sound.playJackpot('mini');
                     score += 5000;
                     showFloatingText("LUCKY 10!", ball.position.x, ball.position.y, 'mini');
@@ -889,7 +920,6 @@
             if (feverTimeRemaining <= 0) {
                 endFever();
             } else {
-                // SINGLE REFILL: ONLY IF EMPTY
                 if (ballCount === 0) {
                     spawnBall(window.innerWidth / 2, -20, 'normal');
                 }
@@ -941,12 +971,20 @@
         msgArea.innerHTML = '';
         msgArea.appendChild(startBtn);
         
-        let recordHtml = isNewRecord ? '<div class="new-record">NEW RECORD!!</div>' : '<div style="margin-top:20px; font-size:14px; color:#aaa;">RESULT</div>';
+        let recordHtml = isNewRecord ? '<div class="new-record">NEW RECORD!!</div>' : '<div style="margin-top:5px; font-size:14px; color:#aaa; font-weight:bold;">RESULT</div>';
         
         const resDiv = document.createElement('div');
         resDiv.innerHTML = `
             ${recordHtml}
-            <div style="font-size:36px; color:#fff; font-weight:bold; text-shadow:0 0 10px #00ffcc;">${score.toLocaleString()}</div>
+            <div style="font-size:36px; color:#fff; font-weight:bold; text-shadow:0 0 10px #00ffcc; margin-bottom:10px;">${score.toLocaleString()}</div>
+            
+            <div class="stats-grid">
+                <div class="stat-item"><span class="stat-label">Total Balls</span><span class="stat-value">${gameStats.totalBalls.toLocaleString()}</span></div>
+                <div class="stat-item"><span class="stat-label">God Ball</span><span class="stat-value god">${gameStats.god}</span></div>
+                <div class="stat-item"><span class="stat-label">Super JP</span><span class="stat-value rare">${gameStats.superJp}</span></div>
+                <div class="stat-item"><span class="stat-label">x100 Ball</span><span class="stat-value rare">${gameStats.x100}</span></div>
+                <div class="stat-item"><span class="stat-label">Mini JP</span><span class="stat-value">${gameStats.mini}</span></div>
+            </div>
         `;
         msgArea.appendChild(resDiv);
 
