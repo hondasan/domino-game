@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Domino Critical V14</title>
+    <title>Domino Critical V21</title>
     <!-- 物理演算ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
@@ -22,6 +22,17 @@
             user-select: none;
             -webkit-user-select: none;
             position: relative;
+            transition: background-color 0.1s;
+        }
+
+        /* 確変モード時の背景アニメーション */
+        body.fever-mode {
+            animation: fever-bg 0.23s infinite alternate; /* BPMに合わせて少し早く */
+        }
+
+        @keyframes fever-bg {
+            0% { background-color: #2a0000; }
+            100% { background-color: #2a002a; }
         }
 
         #game-canvas {
@@ -140,6 +151,46 @@
             margin-bottom: 10px;
             animation: flash 0.5s infinite alternate;
         }
+        
+        /* 確変中の表示テキスト */
+        #fever-indicator {
+            position: absolute;
+            top: 35%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 50;
+            pointer-events: none;
+            display: none;
+            text-shadow: 0 0 20px #ff0055, 0 0 40px #ffcc00;
+        }
+        
+        #fever-mult {
+            font-size: 64px;
+            font-weight: 900;
+            color: #ffcc00;
+            animation: fever-pulse 0.1s infinite alternate;
+        }
+        
+        #fever-timer {
+            font-size: 32px;
+            color: #fff;
+            font-weight: bold;
+            margin-top: 5px;
+            font-family: 'Courier New', monospace;
+        }
+
+        #fever-extend {
+            font-size: 18px;
+            color: #00ffcc;
+            margin-top: 5px;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+        
+        body.fever-mode #fever-indicator {
+            display: block;
+        }
 
         @keyframes pulse {
             0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 255, 204, 0.7); }
@@ -157,6 +208,11 @@
             0% { opacity: 0.5; transform: scale(1); }
             100% { opacity: 1; transform: scale(1.1); text-shadow: 0 0 20px #ff0055, 0 0 40px #ffcc00; }
         }
+        
+        @keyframes fever-pulse {
+            from { transform: scale(1) rotate(-3deg); }
+            to { transform: scale(1.1) rotate(3deg); }
+        }
 
         .hidden { display: none !important; }
     </style>
@@ -172,22 +228,40 @@
             </div>
             <button id="force-finish-btn">FINISH</button>
         </div>
+        <div id="fever-indicator">
+            <div id="fever-mult">FEVER x2</div>
+            <div id="fever-timer">3.00s</div>
+            <div id="fever-extend">EXTEND: +0</div>
+        </div>
         <div id="message-area">
             <button id="start-btn" class="btn-start">TAP TO START</button>
             <div style="margin-top:15px; font-size:11px; color:#888;">
-                V14: REFRESHING SOUND
+                V21: FEVER BGM & SINGLE REFILL
             </div>
         </div>
     </div>
 
 <script>
-    // --- CONFIG V14 ---
+    // --- CONFIG V21 ---
     const CONFIG = {
-        superJackpotChance: 0.001, // 0.1% (100個)
-        miniJackpotChance: 0.01,   // 1.0% (10個)
-        x1000Chance: 0.0002,       // 0.02% (x1000 GOD BALL)
-        x100Chance: 0.005,         // 0.5% (x100 BALL)
-        splitChance: 0.20,         // 20%
+        superJackpotChance: 0.001, 
+        miniJackpotChance: 0.01,   
+        x1000Chance: 0.0002,       
+        x100Chance: 0.005,         
+        
+        splitChance: 0.20,         
+        
+        // FEVER SETTINGS
+        feverBaseDuration: 3000,
+        feverMaxDuration: 10000,   // Max cap 10s
+        feverProbTable: [
+            { mult: 2,    prob: 0.60 },
+            { mult: 5,    prob: 0.30 },
+            { mult: 10,   prob: 0.08 },
+            { mult: 50,   prob: 0.015 },
+            { mult: 100,  prob: 0.004 },
+            { mult: 1000, prob: 0.001 } 
+        ],
         
         ballSize: 4.5,
         pegSize: 4.0,
@@ -211,12 +285,18 @@
 
     let engine, render, runner, world;
     let score = 0;
-    let highScore = parseInt(localStorage.getItem('domino_critical_highscore_v12')) || 0;
+    let highScore = parseInt(localStorage.getItem('domino_critical_highscore_v17')) || 0;
     
     let isPlaying = false;
     let hasStarted = false; 
     let ballCount = 0;
     let audioCtx = null;
+    
+    // Fever State
+    let isFever = false;
+    let feverTimeRemaining = 0;
+    let currentFeverMultiplier = 1;
+    let feverExtendCount = 0; // 上乗せ回数
 
     const scoreEl = document.getElementById('score');
     const highScoreEl = document.getElementById('high-score');
@@ -224,13 +304,22 @@
     const startBtn = document.getElementById('start-btn');
     const msgArea = document.getElementById('message-area');
     const finishBtn = document.getElementById('force-finish-btn');
+    const feverMultEl = document.getElementById('fever-mult');
+    const feverTimerEl = document.getElementById('fever-timer');
+    const feverExtendEl = document.getElementById('fever-extend');
 
     highScoreEl.textContent = highScore.toLocaleString();
 
     const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
 
-    // --- Advanced Sound System (V14) ---
+    // --- Sound System (Includes BGM) ---
     const Sound = {
+        bgmNode: null,
+        nextNoteTime: 0,
+        beatCount: 0,
+        isPlayingBGM: false,
+        tempo: 135, // BPM
+
         init: () => {
             if (!audioCtx) {
                 const AC = window.AudioContext || window.webkitAudioContext;
@@ -239,11 +328,8 @@
             if (audioCtx.state === 'suspended') audioCtx.resume();
         },
         
-        // playTone: ball collisions
         playTone: (noteIndex, waveType, ballType) => {
             if (!audioCtx) return;
-            
-            // 間引き処理
             const isRare = (ballType === 'x100' || ballType === 'x1000');
             if (!isRare) {
                 if (ballCount > 100 && Math.random() < 0.7) return; 
@@ -254,21 +340,18 @@
             const gain = audioCtx.createGain();
 
             if (ballType === 'x1000') {
-                // GOD SOUND: Shimmering high sine
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(2000, t);
                 osc.frequency.exponentialRampToValueAtTime(1000, t + 0.3);
                 gain.gain.setValueAtTime(0.15, t);
                 gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
             } else if (ballType === 'x100') {
-                // REFRESHING SOUND: Positive Upsweep (Coin get!)
                 osc.type = 'triangle';
                 osc.frequency.setValueAtTime(880, t);
-                osc.frequency.linearRampToValueAtTime(1760, t + 0.1); // 上昇音
+                osc.frequency.linearRampToValueAtTime(1760, t + 0.1); 
                 gain.gain.setValueAtTime(0.2, t);
                 gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
             } else {
-                // NORMAL
                 const baseFreq = 523.25;
                 const freq = baseFreq * Math.pow(2, noteIndex / 12);
                 osc.type = waveType || 'sine';
@@ -283,12 +366,10 @@
             osc.stop(t + 0.6);
         },
 
-        // playJackpot: Cyber & Futuristic
         playJackpot: (type) => {
             if (!audioCtx) return;
             const t = audioCtx.currentTime;
 
-            // Helper for oscillators
             const playOsc = (type, freq, start, dur, vol, slideTo = null) => {
                 const o = audioCtx.createOscillator();
                 const g = audioCtx.createGain();
@@ -306,18 +387,14 @@
             };
 
             if(type === 'super') {
-                // SUPER JACKPOT: Cyber Riser + Arpeggio
                 playOsc('sawtooth', 200, t, 1.2, 0.15, 4000);
-                
                 const notes = [880, 1108, 1318, 1760]; 
                 for(let i=0; i<16; i++) {
                     playOsc('square', notes[i%4], t + i*0.06, 0.08, 0.08);
                 }
-                
                 playOsc('sine', 100, t, 1.5, 0.5, 30);
 
             } else if (type === 'x1000') {
-                // GOD CHORD
                 const freqs = [523.25, 659.25, 783.99, 987.77, 1174.66];
                 freqs.forEach((f, i) => {
                     playOsc('triangle', f, t, 2.0, 0.1); 
@@ -326,18 +403,132 @@
                 playOsc('sine', 2093.00, t, 2.5, 0.05);
 
             } else if (type === 'x100') {
-                // REFRESHING SPAWN: Major Arpeggio (Lucky!)
-                // C E G C
                 const notes = [523.25, 659.25, 783.99, 1046.50]; 
                 notes.forEach((f, i) => {
                      playOsc('sine', f, t + i*0.05, 0.2, 0.1);
                 });
 
             } else {
-                // Mini Jackpot
                 playOsc('sine', 1046.50, t, 0.2, 0.1);
                 playOsc('sine', 1567.98, t+0.1, 0.3, 0.1); 
                 playOsc('square', 2093.00, t+0.2, 0.4, 0.05); 
+            }
+        },
+
+        playFeverStart: (highVal) => {
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'sawtooth';
+            const basePitch = highVal ? 1200 : 800;
+            o.frequency.setValueAtTime(basePitch, t);
+            o.frequency.linearRampToValueAtTime(basePitch * 1.5, t + 0.2);
+            o.frequency.linearRampToValueAtTime(basePitch, t + 0.4);
+            g.gain.setValueAtTime(0.1, t);
+            g.gain.linearRampToValueAtTime(0, t + 0.5);
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.start(t);
+            o.stop(t + 0.5);
+        },
+        
+        playFeverUpgrade: () => {
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'square';
+            o.frequency.setValueAtTime(1000, t);
+            o.frequency.exponentialRampToValueAtTime(4000, t + 0.3);
+            g.gain.setValueAtTime(0.1, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.start(t);
+            o.stop(t + 0.3);
+        },
+
+        // --- BGM Sequencer ---
+        startFeverBGM: () => {
+            if (!audioCtx || Sound.isPlayingBGM) return;
+            Sound.isPlayingBGM = true;
+            Sound.nextNoteTime = audioCtx.currentTime;
+            Sound.beatCount = 0;
+            Sound.scheduler();
+        },
+
+        stopFeverBGM: () => {
+            Sound.isPlayingBGM = false;
+            if(Sound.timerID) clearTimeout(Sound.timerID);
+        },
+
+        scheduler: () => {
+            if (!Sound.isPlayingBGM) return;
+            while (Sound.nextNoteTime < audioCtx.currentTime + 0.1) {
+                Sound.playBeat(Sound.nextNoteTime, Sound.beatCount);
+                Sound.nextNoteTime += 60.0 / Sound.tempo / 4; // 16th notes
+                Sound.beatCount++;
+            }
+            Sound.timerID = setTimeout(Sound.scheduler, 25);
+        },
+
+        playBeat: (time, beat) => {
+            // Kick (4/4)
+            if (beat % 4 === 0) {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(150, time);
+                osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+                gain.gain.setValueAtTime(0.5, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(time);
+                osc.stop(time + 0.5);
+            }
+
+            // Bass (Off-beat)
+            if ((beat + 2) % 4 === 0) {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(60, time); 
+                // Low pass filter effect simulation by volume env
+                gain.gain.setValueAtTime(0.0, time);
+                gain.gain.linearRampToValueAtTime(0.2, time + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(time);
+                osc.stop(time + 0.3);
+            }
+
+            // Hihat (16th notes)
+            if (beat % 1 === 0) {
+                // Create buffer for noise
+                const bufferSize = audioCtx.sampleRate * 0.05; // 50ms
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+                const gain = audioCtx.createGain();
+                
+                // Open hihat on off-beat, closed on on-beat
+                const vol = (beat % 2 === 0) ? 0.05 : 0.1;
+                gain.gain.setValueAtTime(vol, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+                
+                // Simple Highpass filter equivalent
+                // (Web Audio BiquadFilterNode could be used here for better sound)
+                
+                noise.connect(gain);
+                gain.connect(audioCtx.destination);
+                noise.start(time);
             }
         }
     };
@@ -438,6 +629,12 @@
         hasStarted = false;
         isPlaying = true;
         
+        isFever = false;
+        feverTimeRemaining = 0;
+        currentFeverMultiplier = 1;
+        feverExtendCount = 0;
+        document.body.classList.remove('fever-mode');
+        
         updateUI();
         
         msgArea.classList.add('hidden');
@@ -453,27 +650,97 @@
         if(balls.length > 0) Composite.remove(world, balls);
     }
 
+    function startFever() {
+        let r = Math.random();
+        let selectedMult = 2;
+        let cumulative = 0;
+        
+        for (let item of CONFIG.feverProbTable) {
+            cumulative += item.prob;
+            if (r < cumulative) {
+                selectedMult = item.mult;
+                break;
+            }
+        }
+
+        // BGM Start if not playing
+        if (!isFever) {
+            Sound.startFeverBGM();
+        }
+
+        // Add Time
+        feverTimeRemaining += CONFIG.feverBaseDuration;
+        if (feverTimeRemaining > CONFIG.feverMaxDuration) {
+            feverTimeRemaining = CONFIG.feverMaxDuration;
+        }
+
+        // Count Extension (only if already in fever or just starting)
+        if (isFever) {
+            feverExtendCount++;
+        }
+
+        let upgraded = false;
+        if (selectedMult > currentFeverMultiplier) {
+            currentFeverMultiplier = selectedMult;
+            upgraded = true;
+        }
+
+        if (upgraded && isFever) {
+            Sound.playFeverUpgrade(); 
+        } else if (!isFever) {
+            Sound.playFeverStart(selectedMult >= 50); 
+        }
+
+        isFever = true;
+        document.body.classList.add('fever-mode');
+        
+        updateFeverUI();
+    }
+
+    function updateFeverUI() {
+        if (isFever) {
+            feverMultEl.textContent = `FEVER x${currentFeverMultiplier}`;
+            feverTimerEl.textContent = (feverTimeRemaining / 1000).toFixed(2) + 's';
+            feverExtendEl.textContent = `EXTEND: +${feverExtendCount}`;
+            
+            if (currentFeverMultiplier >= 50) {
+                feverMultEl.style.color = '#ff0055';
+            } else if (currentFeverMultiplier >= 10) {
+                feverMultEl.style.color = '#ffcc00';
+            } else {
+                feverMultEl.style.color = '#00ffcc';
+            }
+        }
+    }
+
+    function endFever() {
+        isFever = false;
+        feverTimeRemaining = 0;
+        currentFeverMultiplier = 1;
+        feverExtendCount = 0;
+        document.body.classList.remove('fever-mode');
+        Sound.stopFeverBGM();
+    }
+
     function spawnBall(x, y, type = 'normal') {
         if (!isPlaying) return;
 
         let style;
-        let ballType = type; // normal, x100, x1000
+        let ballType = type; 
         
         if (type === 'master') {
             style = { color: '#ffffff', note: 12, type: 'square' };
-            ballType = 'normal'; // マスターボール自体の性能は普通
+            ballType = 'normal'; 
         } else if (type === 'super') {
             style = { color: '#ffffff', note: 14, type: 'sawtooth' }; 
-            ballType = 'normal'; // エフェクト用
+            ballType = 'normal'; 
         } else if (type === 'mini') {
             style = { color: '#ffcc00', note: 9, type: 'square' }; 
             ballType = 'normal';
         } else if (type === 'x1000') {
-            // GOD BALL STYLE
-            style = { color: '#aa00ff', note: 20, type: 'sine' }; // Purple
+            style = { color: '#aa00ff', note: 20, type: 'sine' }; 
         } else if (type === 'x100') {
-            // X100 BALL STYLE
-            style = { color: '#ff0000', note: -5, type: 'sawtooth' }; // Red
+            style = { color: '#ff0000', note: -5, type: 'sawtooth' }; 
         } else {
             style = PALETTE[Math.floor(Math.random() * PALETTE.length)];
         }
@@ -537,7 +804,6 @@
                 const ball = bodyA.label === 'ball' ? bodyA : bodyB;
                 const peg = bodyA.label === 'peg' ? bodyA : bodyB;
 
-                // --- Score & Sound ---
                 let hitScore = CONFIG.baseScore;
                 const bType = ball.plugin ? ball.plugin.ballType : 'normal';
 
@@ -547,12 +813,13 @@
                     hitScore = CONFIG.baseScore * CONFIG.x100Multiplier;
                 }
                 
-                // Play sound (pass ballType)
-                if(ball.plugin) Sound.playTone(ball.plugin.note, ball.plugin.wave, bType);
+                if (isFever) {
+                    hitScore *= currentFeverMultiplier;
+                }
                 
+                if(ball.plugin) Sound.playTone(ball.plugin.note, ball.plugin.wave, bType);
                 score += hitScore;
 
-                // Visual Bounce
                 if (Math.random() > 0.6 || bType === 'x1000') {
                     peg.render.fillStyle = ball.render.fillStyle;
                     peg.render.strokeStyle = '#fff';
@@ -562,12 +829,11 @@
                     }, 100);
                 }
 
-                // --- Gacha Logic ---
                 const rand = Math.random();
                 
-                // 1. SUPER JACKPOT (0.1%)
                 if (rand < CONFIG.superJackpotChance) {
                     Sound.playJackpot('super');
+                    startFever(); 
                     score += 100000;
                     showFloatingText("SUPER JACKPOT!!!", window.innerWidth/2, window.innerHeight/3, 'super');
                     let created = 0;
@@ -583,19 +849,18 @@
                     };
                     burst();
                 } 
-                // 2. x1000 GOD BALL (0.02%)
                 else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance) {
                     Sound.playJackpot('x1000');
+                    startFever(); 
                     showFloatingText("GOD BALL x1000", ball.position.x, ball.position.y, 'x1000');
                     spawnBall(ball.position.x, ball.position.y, 'x1000');
                 }
-                // 3. x100 BALL (0.5%)
                 else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance) {
                     Sound.playJackpot('x100');
+                    startFever(); 
                     showFloatingText("x100 BALL!!", ball.position.x, ball.position.y, 'x100');
                     spawnBall(ball.position.x, ball.position.y, 'x100');
                 }
-                // 4. MINI JACKPOT (1.0%)
                 else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance + CONFIG.miniJackpotChance) {
                     Sound.playJackpot('mini');
                     score += 5000;
@@ -604,10 +869,13 @@
                         spawnBall(ball.position.x, ball.position.y, bType === 'normal' ? 'mini' : bType);
                     }
                 }
-                // 5. NORMAL SPLIT (20%)
-                else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance + CONFIG.miniJackpotChance + CONFIG.splitChance) {
-                    score += 500;
-                    spawnBall(ball.position.x, ball.position.y, bType);
+                else {
+                    const threshold = CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance + CONFIG.miniJackpotChance + CONFIG.splitChance;
+                    
+                    if (rand < threshold) {
+                        score += 500;
+                        spawnBall(ball.position.x, ball.position.y, bType);
+                    }
                 }
             }
         });
@@ -615,6 +883,18 @@
 
     function handleGameLoop() {
         if (!isPlaying) return;
+
+        if (isFever) {
+            feverTimeRemaining -= engine.timing.lastDelta;
+            if (feverTimeRemaining <= 0) {
+                endFever();
+            } else {
+                // SINGLE REFILL: ONLY IF EMPTY
+                if (ballCount === 0) {
+                    spawnBall(window.innerWidth / 2, -20, 'normal');
+                }
+            }
+        }
 
         const bodies = Composite.allBodies(world);
         const h = window.innerHeight;
@@ -632,20 +912,27 @@
         }
         
         ballCount = currentBallCount;
-        if (hasStarted && ballCount === 0) endGame();
-        if (engine.timing.timestamp % 200 < 20) updateUI();
+        
+        if (hasStarted && ballCount === 0 && !isFever) {
+            endGame();
+        }
+        
+        if (engine.timing.timestamp % 50 < 20) {
+            updateUI();
+            updateFeverUI();
+        }
     }
 
     function endGame() {
         if (!isPlaying) return;
         isPlaying = false; 
+        endFever(); 
         finishBtn.style.display = 'none'; 
 
-        // ハイスコア判定
         let isNewRecord = false;
         if (score > highScore) {
             highScore = score;
-            localStorage.setItem('domino_critical_highscore_v12', highScore);
+            localStorage.setItem('domino_critical_highscore_v17', highScore);
             highScoreEl.textContent = Number(highScore).toLocaleString();
             isNewRecord = true;
         }
@@ -654,7 +941,6 @@
         msgArea.innerHTML = '';
         msgArea.appendChild(startBtn);
         
-        // NEW RECORD演出
         let recordHtml = isNewRecord ? '<div class="new-record">NEW RECORD!!</div>' : '<div style="margin-top:20px; font-size:14px; color:#aaa;">RESULT</div>';
         
         const resDiv = document.createElement('div');
