@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Domino Critical V33</title>
+    <title>Domino Critical V34</title>
     <!-- 物理演算ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
@@ -97,7 +97,10 @@
             text-align: center;
             background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
             position: relative;
-            height: 100px;
+            height: 120px; /* スコア表示用に少し高く */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         #force-finish-btn {
@@ -108,9 +111,9 @@
             background: rgba(200, 0, 50, 0.6);
             border: 1px solid rgba(255, 100, 100, 0.8);
             color: #fff;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: bold;
-            padding: 10px 15px;
+            padding: 8px 12px;
             border-radius: 6px;
             cursor: pointer;
             text-transform: uppercase;
@@ -119,16 +122,24 @@
         }
         #force-finish-btn:active { background: rgba(200, 0, 50, 1); }
 
+        /* スコアボックス: フレキシブルなフォントサイズ対応 */
+        .score-container {
+            width: 80%;
+            height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
         .score-box {
-            font-size: 40px;
+            font-size: 40px; /* 初期サイズ */
             font-weight: 900;
             color: #00ffcc;
             text-shadow: 1px 1px 0 #000;
             letter-spacing: 1px;
             font-variant-numeric: tabular-nums;
             white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            transition: font-size 0.1s;
         }
 
         .sub-info {
@@ -229,6 +240,23 @@
             display: block;
         }
 
+        /* LAST HOPE 演出用 */
+        #last-hope-overlay {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 48px;
+            font-weight: 900;
+            text-shadow: 0 0 20px gold;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 200;
+        }
+        .last-hope-anim {
+            animation: lastHopeAnim 2s ease-in-out forwards;
+        }
+
         /* 統計情報 */
         .stats-container {
             width: 100%;
@@ -278,6 +306,13 @@
             100% { transform: translate(-50%, -150%) scale(1.0); opacity: 0; }
         }
 
+        @keyframes lastHopeAnim {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+            20% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+            80% { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
+        }
+
         .hidden { display: none !important; }
     </style>
 </head>
@@ -290,7 +325,9 @@
 
     <div id="ui-layer">
         <div class="header">
-            <div id="score" class="score-box">0</div>
+            <div class="score-container">
+                <div id="score" class="score-box">0</div>
+            </div>
             <div class="sub-info">
                 Best: <span id="high-score">0</span><br>
                 Balls: <span id="ball-count">0</span> (Limitless)
@@ -302,16 +339,17 @@
             <div id="fever-timer">3.00s</div>
             <div id="fever-extend">EXTEND: +0</div>
         </div>
+        <div id="last-hope-overlay">LAST HOPE</div>
         <div id="message-area">
             <button id="start-btn" class="btn-start">TAP TO START</button>
             <div style="margin-top:15px; font-size:11px; color:#888;">
-                V33: SUPER JP 50 & LITE PHYSICS
+                V34: LAST HOPE
             </div>
         </div>
     </div>
 
 <script>
-    // --- CONFIG V33 ---
+    // --- CONFIG V34 ---
     const CONFIG = {
         // 確率
         superJackpotChance: 0.0005, // 0.05%
@@ -320,13 +358,13 @@
         x100Chance: 0.005,          // 0.5%
         splitChance: 0.20,         
         
-        // Super JP個数調整
-        superJackpotCount: 50,      // 100 -> 50 に減量して軽量化
+        // Super JP個数
+        superJackpotCount: 50,
         
         // FEVER
         feverBaseDuration: 1000,
         feverMaxDuration: 10000,
-        feverRefillInterval: 500,   
+        // feverRefillInterval 削除 (廃止)
         
         feverProbTable: [
             { mult: 2,    prob: 0.60 },
@@ -336,6 +374,8 @@
             { mult: 100,  prob: 0.004 },
             { mult: 1000, prob: 0.001 } 
         ],
+        
+        lastHopeChance: 0.1, // 10%で復活
         
         ballSize: 5.0,      
         pegSize: 4.0,
@@ -368,11 +408,11 @@
     
     let isFever = false;
     let feverTimeRemaining = 0;
-    let feverRefillTimer = 0;
     let currentFeverMultiplier = 1;
     let feverExtendCount = 0;
     
-    // 軽量化用フレームカウンタ
+    let lastHopeUsed = false; // 1ゲーム1回まで
+    
     let frameCounter = 0;
 
     let gameStats = {
@@ -392,6 +432,7 @@
     const feverMultEl = document.getElementById('fever-mult');
     const feverTimerEl = document.getElementById('fever-timer');
     const feverExtendEl = document.getElementById('fever-extend');
+    const lastHopeEl = document.getElementById('last-hope-overlay');
 
     highScoreEl.textContent = highScore.toLocaleString();
 
@@ -417,13 +458,8 @@
         playTone: (noteIndex, waveType, ballType) => {
             if (!audioCtx) return;
             const now = audioCtx.currentTime;
-            
             const isRare = (ballType === 'x100' || ballType === 'x1000');
-            
-            // サウンドスロットリング (さらに少し厳しく調整)
-            if (!isRare && (now - Sound.lastPlayTime < 0.06)) {
-                return;
-            }
+            if (!isRare && (now - Sound.lastPlayTime < 0.06)) return;
             Sound.lastPlayTime = now;
 
             const osc = audioCtx.createOscillator();
@@ -539,6 +575,24 @@
             o.stop(t + 0.3);
         },
 
+        playLastHope: () => {
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            // 神秘的な復活音
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'sine';
+            o.frequency.setValueAtTime(220, t);
+            o.frequency.exponentialRampToValueAtTime(880, t + 1.0);
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(0.5, t + 0.5);
+            g.gain.linearRampToValueAtTime(0, t + 2.0);
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.start(t);
+            o.stop(t + 2.0);
+        },
+
         startFeverBGM: () => {
             if (!audioCtx || Sound.isPlayingBGM) return;
             Sound.isPlayingBGM = true;
@@ -610,11 +664,10 @@
     };
 
     function init() {
-        // --- 物理演算の超軽量化 ---
         engine = Engine.create({
-            positionIterations: 4, // 5->4
-            velocityIterations: 2, // 3->2
-            enableSleeping: true   // スリープ有効化（重要）
+            positionIterations: 4, 
+            velocityIterations: 2, 
+            enableSleeping: true   
         });
         world = engine.world;
         engine.gravity.y = CONFIG.gravity;
@@ -712,9 +765,9 @@
         
         isFever = false;
         feverTimeRemaining = 0;
-        feverRefillTimer = 0;
         currentFeverMultiplier = 1;
         feverExtendCount = 0;
+        lastHopeUsed = false;
         document.body.classList.remove('fever-mode');
         
         // Reset Stats
@@ -724,6 +777,7 @@
         
         msgArea.classList.add('hidden');
         finishBtn.style.display = 'block'; 
+        lastHopeEl.classList.remove('last-hope-anim');
         
         spawnBall(window.innerWidth / 2, 40, 'master');
         hasStarted = true;
@@ -750,7 +804,6 @@
 
         if (!isFever) {
             Sound.startFeverBGM();
-            feverRefillTimer = 0; 
         }
 
         feverTimeRemaining += CONFIG.feverBaseDuration;
@@ -824,6 +877,8 @@
             style = { color: '#aa00ff', note: 20, type: 'sine' }; 
         } else if (type === 'x100') {
             style = { color: '#ff0000', note: -5, type: 'sawtooth' }; 
+        } else if (type === 'gold') { // Last Hope
+            style = { color: '#ffd700', note: 15, type: 'sine' }; 
         } else {
             style = PALETTE[Math.floor(Math.random() * PALETTE.length)];
         }
@@ -835,8 +890,8 @@
             label: 'ball',
             render: { 
                 fillStyle: style.color,
-                strokeStyle: (ballType === 'x1000') ? '#ffffff' : (ballType === 'x100' ? '#ffff00' : 'transparent'),
-                lineWidth: (ballType === 'x1000' || ballType === 'x100') ? 2 : 0
+                strokeStyle: (ballType === 'x1000' || ballType === 'gold') ? '#ffffff' : (ballType === 'x100' ? '#ffff00' : 'transparent'),
+                lineWidth: (ballType === 'x1000' || ballType === 'x100' || ballType === 'gold') ? 2 : 0
             },
             plugin: { 
                 note: style.note, 
@@ -896,6 +951,8 @@
                     hitScore = CONFIG.baseScore * CONFIG.x1000Multiplier;
                 } else if (bType === 'x100') {
                     hitScore = CONFIG.baseScore * CONFIG.x100Multiplier;
+                } else if (bType === 'gold') { // Last Hope
+                    hitScore = CONFIG.baseScore * 10;
                 }
                 
                 if (isFever) {
@@ -905,7 +962,7 @@
                 if(ball.plugin) Sound.playTone(ball.plugin.note, ball.plugin.wave, bType);
                 score += hitScore;
 
-                if (Math.random() > 0.6 || bType === 'x1000') {
+                if (Math.random() > 0.6 || bType === 'x1000' || bType === 'gold') {
                     peg.render.fillStyle = ball.render.fillStyle;
                     peg.render.strokeStyle = '#fff';
                     setTimeout(() => { 
@@ -971,25 +1028,46 @@
         });
     }
 
+    // ラストホープ発動判定
+    function tryLastHope() {
+        if (lastHopeUsed || !isPlaying) {
+            endGame();
+            return;
+        }
+        
+        // 確率判定
+        if (Math.random() < CONFIG.lastHopeChance) {
+            lastHopeUsed = true;
+            Sound.playLastHope();
+            
+            // 演出
+            lastHopeEl.classList.add('last-hope-anim');
+            setTimeout(() => {
+                lastHopeEl.classList.remove('last-hope-anim');
+            }, 2000);
+            
+            // ボール生成
+            spawnBall(window.innerWidth / 2, -20, 'gold');
+        } else {
+            endGame();
+        }
+    }
+
     function handleGameLoop() {
         if (!isPlaying) return;
 
         // --- 軽量化されたループ ---
-        // 全ボディ走査を毎フレーム行わず、間引く (5フレームに1回)
         frameCounter++;
         
         if (isFever) {
             feverTimeRemaining -= engine.timing.lastDelta;
-            feverRefillTimer += engine.timing.lastDelta;
-
-            if (feverRefillTimer >= CONFIG.feverRefillInterval) {
-                feverRefillTimer = 0;
-                const spawnX = window.innerWidth / 2 + (Math.random() - 0.5) * 60;
-                spawnBall(spawnX, -20, 'normal');
-            }
-
             if (feverTimeRemaining <= 0) {
                 endFever();
+            } else {
+                // FEVER中でもボール0個になったら1個補充（詰み防止）
+                if (ballCount === 0) {
+                    spawnBall(window.innerWidth / 2, -20, 'normal');
+                }
             }
         }
 
@@ -1012,11 +1090,12 @@
             ballCount = count;
             
             if (hasStarted && ballCount === 0 && !isFever) {
-                endGame();
+                // ボールが尽きたらラストホープ判定へ
+                tryLastHope();
             }
         }
         
-        if (engine.timing.timestamp % 50 < 20) {
+        if (engine.timing.timestamp % 200 < 20) { // UI更新頻度
             updateUI();
             updateFeverUI();
         }
@@ -1046,7 +1125,7 @@
         resDiv.style.width = '100%';
         resDiv.innerHTML = `
             ${recordHtml}
-            <div style="font-size:42px; color:#fff; font-weight:900; text-shadow:0 0 15px #00ffcc; margin:10px 0; letter-spacing:1px;">${score.toLocaleString()}</div>
+            <div style="font-size:42px; color:#fff; font-weight:900; text-shadow:0 0 15px #00ffcc; margin:10px 0; letter-spacing:1px; overflow-wrap: break-word;">${score.toLocaleString()}</div>
             
             <div class="stats-container">
                 <div class="total-balls">
@@ -1068,7 +1147,21 @@
     }
 
     function updateUI() {
-        scoreEl.textContent = score.toLocaleString();
+        // スコア表示の桁数に応じたサイズ調整
+        const scoreText = score.toLocaleString();
+        scoreEl.textContent = scoreText;
+        
+        // 桁数が多い場合、フォントサイズを動的に下げる
+        if (scoreText.length > 13) {
+            scoreEl.style.fontSize = '24px';
+        } else if (scoreText.length > 10) {
+            scoreEl.style.fontSize = '30px';
+        } else if (scoreText.length > 8) {
+            scoreEl.style.fontSize = '34px';
+        } else {
+            scoreEl.style.fontSize = '40px';
+        }
+        
         ballCountEl.textContent = ballCount;
     }
 
