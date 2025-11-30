@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Domino Critical V23</title>
+    <title>Domino Critical V25</title>
     <!-- 物理演算ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         body {
             margin: 0;
             padding: 0;
-            background-color: #050505;
+            background-color: #000;
             color: white;
             font-family: 'Verdana', sans-serif;
             overflow: hidden;
@@ -22,27 +22,72 @@
             user-select: none;
             -webkit-user-select: none;
             position: relative;
-            transition: background-color 0.1s;
         }
 
-        /* 確変モード時の背景アニメーション */
-        body.fever-mode {
-            animation: fever-bg 0.23s infinite alternate;
+        /* --- Dynamic Background (CSS Only for Performance) --- */
+        #bg-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            overflow: hidden;
+            perspective: 600px; /* 3D効果 */
+            background: radial-gradient(circle at center, #111 0%, #000 100%);
         }
 
-        @keyframes fever-bg {
-            0% { background-color: #2a0000; }
-            100% { background-color: #2a002a; }
+        .grid-plane {
+            position: absolute;
+            width: 300%;
+            height: 300%;
+            left: -100%;
+            top: -100%;
+            /* 通常時のグリッド：シアン */
+            background-image: 
+                linear-gradient(rgba(0, 255, 204, 0.15) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 204, 0.15) 1px, transparent 1px);
+            background-size: 60px 60px;
+            transform: rotateX(60deg);
+            animation: grid-scroll 4s linear infinite;
+            transform-origin: 50% 50%;
+            transition: all 0.5s ease; /* モード切替をスムーズに */
         }
 
+        /* 画面周辺を暗くするビネット効果 */
+        .vignette {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, transparent 50%, #000 95%);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* --- FEVER MODE STYLES --- */
+        body.fever-mode .grid-plane {
+            /* FEVER時のグリッド：赤とゴールド */
+            background-image: 
+                linear-gradient(rgba(255, 0, 85, 0.3) 2px, transparent 2px),
+                linear-gradient(90deg, rgba(255, 204, 0, 0.2) 2px, transparent 2px);
+            animation: grid-scroll 0.6s linear infinite; /* 超高速化 */
+            filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.5));
+        }
+
+        @keyframes grid-scroll {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 60px; }
+        }
+
+        /* --- Game Layers --- */
         #game-canvas {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 1;
+            z-index: 2; /* 背景より上 */
             display: block;
+            will-change: transform; 
         }
 
         #ui-layer {
@@ -137,7 +182,6 @@
             margin-top: 15px;
         }
 
-        /* 統計情報のスタイル */
         .stats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -244,6 +288,12 @@
 </head>
 <body>
 
+    <!-- 背景レイヤー (New) -->
+    <div id="bg-layer">
+        <div class="grid-plane"></div>
+        <div class="vignette"></div>
+    </div>
+
     <div id="ui-layer">
         <div class="header">
             <div id="score" class="score-box">0</div>
@@ -261,13 +311,13 @@
         <div id="message-area">
             <button id="start-btn" class="btn-start">TAP TO START</button>
             <div style="margin-top:15px; font-size:11px; color:#888;">
-                V23: RESULT STATS
+                V25: DYNAMIC BACKGROUND
             </div>
         </div>
     </div>
 
 <script>
-    // --- CONFIG V23 ---
+    // --- CONFIG V25 ---
     const CONFIG = {
         superJackpotChance: 0.001, 
         miniJackpotChance: 0.01,   
@@ -276,7 +326,6 @@
         
         splitChance: 0.20,         
         
-        // FEVER SETTINGS
         feverBaseDuration: 1000,
         feverMaxDuration: 10000,
         feverProbTable: [
@@ -295,7 +344,10 @@
         
         baseScore: 100,
         x100Multiplier: 100,
-        x1000Multiplier: 1000
+        x1000Multiplier: 1000,
+
+        // VFX Settings
+        trailLength: 10 
     };
 
     const PALETTE = [
@@ -317,13 +369,11 @@
     let ballCount = 0;
     let audioCtx = null;
     
-    // Fever State
     let isFever = false;
     let feverTimeRemaining = 0;
     let currentFeverMultiplier = 1;
     let feverExtendCount = 0;
 
-    // Stats
     let gameStats = {
         totalBalls: 0,
         god: 0,
@@ -346,13 +396,67 @@
 
     const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
 
+    // --- Visual Effects (V24/V25) ---
+    const VFX = {
+        shake: 0,
+        update: () => {
+            if (VFX.shake > 0) {
+                const x = (Math.random() - 0.5) * VFX.shake;
+                const y = (Math.random() - 0.5) * VFX.shake;
+                render.canvas.style.transform = `translate(${x}px, ${y}px)`;
+                VFX.shake *= 0.9; 
+                if (VFX.shake < 0.5) {
+                    VFX.shake = 0;
+                    render.canvas.style.transform = 'none';
+                }
+            }
+        },
+        triggerShake: (amount) => {
+            if (amount > VFX.shake) {
+                VFX.shake = amount;
+            }
+        },
+        drawTrails: (ctx, bodies) => {
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            for (let body of bodies) {
+                if (body.plugin && body.plugin.trail) {
+                    const trail = body.plugin.trail;
+                    
+                    trail.push({ x: body.position.x, y: body.position.y });
+                    if (trail.length > CONFIG.trailLength) trail.shift();
+
+                    if (trail.length > 1) {
+                        ctx.beginPath();
+                        ctx.moveTo(trail[0].x, trail[0].y);
+                        for (let i = 1; i < trail.length; i++) {
+                            ctx.lineTo(trail[i].x, trail[i].y);
+                        }
+                        
+                        const color = body.render.fillStyle;
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = body.circleRadius * 0.8;
+                        
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.globalAlpha = 0.5;
+                        ctx.stroke();
+                        
+                        ctx.globalAlpha = 1.0;
+                        ctx.globalCompositeOperation = 'source-over';
+                    }
+                }
+            }
+        }
+    };
+
     // --- Sound System ---
     const Sound = {
         bgmNode: null,
         nextNoteTime: 0,
         beatCount: 0,
         isPlayingBGM: false,
-        tempo: 135, // BPM
+        tempo: 135, 
 
         init: () => {
             if (!audioCtx) {
@@ -508,7 +612,6 @@
         },
 
         playBeat: (time, beat) => {
-            // Kick
             if (beat % 4 === 0) {
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
@@ -522,7 +625,6 @@
                 osc.start(time);
                 osc.stop(time + 0.5);
             }
-            // Bass
             if ((beat + 2) % 4 === 0) {
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
@@ -536,7 +638,6 @@
                 osc.start(time);
                 osc.stop(time + 0.3);
             }
-            // Hihat
             if (beat % 1 === 0) {
                 const bufferSize = audioCtx.sampleRate * 0.05; 
                 const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
@@ -569,7 +670,7 @@
                 width: window.innerWidth,
                 height: window.innerHeight,
                 wireframes: false,
-                background: '#050505',
+                background: 'transparent', // CSS背景を表示するために透過
                 pixelRatio: 1 
             }
         });
@@ -577,8 +678,15 @@
         
         createStage();
 
+        // 物理エンジンのイベント
         Events.on(engine, 'collisionStart', handleCollision);
         Events.on(engine, 'beforeUpdate', handleGameLoop);
+        
+        // 描画イベント
+        Events.on(render, 'afterRender', function() {
+            const bodies = Composite.allBodies(world);
+            VFX.drawTrails(render.context, bodies);
+        });
 
         Render.run(render);
         runner = Runner.create();
@@ -718,6 +826,9 @@
         isFever = true;
         document.body.classList.add('fever-mode');
         
+        // Fever start shake
+        VFX.triggerShake(10);
+        
         updateFeverUI();
     }
 
@@ -782,7 +893,9 @@
             plugin: { 
                 note: style.note, 
                 wave: style.type, 
-                ballType: ballType
+                ballType: ballType,
+                // トレイル履歴の初期化（レアのみ）
+                trail: (ballType === 'x1000' || ballType === 'x100' || type === 'master') ? [] : null
             }
         });
 
@@ -861,6 +974,7 @@
                 if (rand < CONFIG.superJackpotChance) {
                     gameStats.superJp++;
                     Sound.playJackpot('super');
+                    VFX.triggerShake(20); // 大揺れ
                     startFever(); 
                     score += 100000;
                     showFloatingText("SUPER JACKPOT!!!", window.innerWidth/2, window.innerHeight/3, 'super');
@@ -880,6 +994,7 @@
                 else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance) {
                     gameStats.god++;
                     Sound.playJackpot('x1000');
+                    VFX.triggerShake(15);
                     startFever(); 
                     showFloatingText("GOD BALL x1000", ball.position.x, ball.position.y, 'x1000');
                     spawnBall(ball.position.x, ball.position.y, 'x1000');
@@ -887,6 +1002,7 @@
                 else if (rand < CONFIG.superJackpotChance + CONFIG.x1000Chance + CONFIG.x100Chance) {
                     gameStats.x100++;
                     Sound.playJackpot('x100');
+                    VFX.triggerShake(5);
                     startFever(); 
                     showFloatingText("x100 BALL!!", ball.position.x, ball.position.y, 'x100');
                     spawnBall(ball.position.x, ball.position.y, 'x100');
@@ -914,6 +1030,9 @@
 
     function handleGameLoop() {
         if (!isPlaying) return;
+
+        // VFX更新
+        VFX.update();
 
         if (isFever) {
             feverTimeRemaining -= engine.timing.lastDelta;
