@@ -2,10 +2,10 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Domino Critical V34</title>
+    <title>Domino Critical V40</title>
     <!-- 物理演算ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
@@ -93,19 +93,21 @@
         }
 
         .header {
-            padding: 20px;
+            padding-top: max(40px, env(safe-area-inset-top));
+            padding-bottom: 10px;
             text-align: center;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.8) 70%, transparent 100%);
             position: relative;
-            height: 120px; /* スコア表示用に少し高く */
+            height: 140px; 
             display: flex;
             flex-direction: column;
             align-items: center;
+            z-index: 20;
         }
 
         #force-finish-btn {
             position: absolute;
-            top: 20px;
+            top: max(20px, env(safe-area-inset-top));
             right: 20px;
             pointer-events: auto;
             background: rgba(200, 0, 50, 0.6);
@@ -122,17 +124,17 @@
         }
         #force-finish-btn:active { background: rgba(200, 0, 50, 1); }
 
-        /* スコアボックス: フレキシブルなフォントサイズ対応 */
         .score-container {
-            width: 80%;
-            height: 50px;
+            width: 90%;
+            height: 60px;
             display: flex;
             justify-content: center;
             align-items: center;
+            margin-top: 5px;
         }
 
         .score-box {
-            font-size: 40px; /* 初期サイズ */
+            font-size: 40px; 
             font-weight: 900;
             color: #00ffcc;
             text-shadow: 1px 1px 0 #000;
@@ -140,16 +142,19 @@
             font-variant-numeric: tabular-nums;
             white-space: nowrap;
             transition: font-size 0.1s;
+            max-width: 100%;
         }
 
         .sub-info {
-            font-size: 12px;
-            color: #888;
+            font-size: 14px;
+            color: #aaa;
             margin-top: 5px;
             text-transform: uppercase;
+            font-weight: bold;
+            text-shadow: 1px 1px 0 #000;
         }
 
-        /* リザルト画面 */
+        /* リザルト画面 & スタート画面 */
         #message-area {
             position: absolute;
             top: 50%;
@@ -183,6 +188,25 @@
             white-space: nowrap;
             margin-top: 20px;
             width: 100%;
+        }
+
+        .option-toggle {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ccc;
+            font-size: 14px;
+            cursor: pointer;
+            user-select: none;
+            background: rgba(255,255,255,0.1);
+            padding: 8px 15px;
+            border-radius: 20px;
+        }
+        .option-toggle input {
+            margin-right: 10px;
+            transform: scale(1.3);
+            accent-color: #00ffcc;
         }
 
         .jackpot-text {
@@ -240,7 +264,6 @@
             display: block;
         }
 
-        /* LAST HOPE 演出用 */
         #last-hope-overlay {
             position: absolute;
             top: 50%; left: 50%;
@@ -257,7 +280,6 @@
             animation: lastHopeAnim 2s ease-in-out forwards;
         }
 
-        /* 統計情報 */
         .stats-container {
             width: 100%;
             margin-top: 10px;
@@ -342,30 +364,27 @@
         <div id="last-hope-overlay">LAST HOPE</div>
         <div id="message-area">
             <button id="start-btn" class="btn-start">TAP TO START</button>
-            <div style="margin-top:15px; font-size:11px; color:#888;">
-                V34: LAST HOPE
+            <div style="margin-top:10px; font-size:11px; color:#888;">
+                V40: LOGIC FIXED
             </div>
+            
+            <label class="option-toggle">
+                <input type="checkbox" id="crumble-mode-check">
+                Enable Pin Crumble (ピン風化)
+            </label>
         </div>
     </div>
 
 <script>
-    // --- CONFIG V34 ---
     const CONFIG = {
-        // 確率
-        superJackpotChance: 0.0005, // 0.05%
-        miniJackpotChance: 0.01,    // 1.0%
-        x1000Chance: 0.0002,        // 0.02%
-        x100Chance: 0.005,          // 0.5%
+        superJackpotChance: 0.0005, 
+        miniJackpotChance: 0.01,    
+        x1000Chance: 0.0002,        
+        x100Chance: 0.005,          
         splitChance: 0.20,         
-        
-        // Super JP個数
         superJackpotCount: 50,
-        
-        // FEVER
         feverBaseDuration: 1000,
         feverMaxDuration: 10000,
-        // feverRefillInterval 削除 (廃止)
-        
         feverProbTable: [
             { mult: 2,    prob: 0.60 },
             { mult: 5,    prob: 0.30 },
@@ -374,14 +393,12 @@
             { mult: 100,  prob: 0.004 },
             { mult: 1000, prob: 0.001 } 
         ],
-        
-        lastHopeChance: 0.1, // 10%で復活
-        
+        lastHopeChance: 0.1, 
+        pegHealth: 50, 
         ballSize: 5.0,      
         pegSize: 4.0,
         gravity: 1.1,
         bounciness: 0.8,
-        
         baseScore: 100,
         x100Multiplier: 100,
         x1000Multiplier: 1000
@@ -399,7 +416,11 @@
 
     let engine, render, runner, world;
     let score = 0;
-    let highScore = parseInt(localStorage.getItem('domino_critical_highscore_v17')) || 0;
+    
+    let highScores = {
+        normal: parseInt(localStorage.getItem('domino_critical_highscore_normal')) || 0,
+        crumble: parseInt(localStorage.getItem('domino_critical_highscore_crumble')) || 0
+    };
     
     let isPlaying = false;
     let hasStarted = false; 
@@ -411,16 +432,13 @@
     let currentFeverMultiplier = 1;
     let feverExtendCount = 0;
     
-    let lastHopeUsed = false; // 1ゲーム1回まで
+    let lastHopeUsed = false;
+    let isCrumbleMode = false; // ゲームプレイ中のモード
     
     let frameCounter = 0;
 
     let gameStats = {
-        totalBalls: 0,
-        god: 0,
-        superJp: 0,
-        x100: 0,
-        mini: 0
+        totalBalls: 0, god: 0, superJp: 0, x100: 0, mini: 0
     };
 
     const scoreEl = document.getElementById('score');
@@ -434,11 +452,8 @@
     const feverExtendEl = document.getElementById('fever-extend');
     const lastHopeEl = document.getElementById('last-hope-overlay');
 
-    highScoreEl.textContent = highScore.toLocaleString();
-
     const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
 
-    // --- Sound System ---
     const Sound = {
         bgmNode: null,
         nextNoteTime: 0,
@@ -578,7 +593,6 @@
         playLastHope: () => {
             if (!audioCtx) return;
             const t = audioCtx.currentTime;
-            // 神秘的な復活音
             const o = audioCtx.createOscillator();
             const g = audioCtx.createGain();
             o.type = 'sine';
@@ -702,6 +716,41 @@
 
         startBtn.addEventListener('click', startGame);
         finishBtn.addEventListener('click', () => { if(isPlaying) endGame(); });
+        
+        // 初回のチェックボックスロジック設定
+        setupCrumbleToggle();
+        
+        // チェックボックスの初期状態を変数に反映してハイスコア更新
+        const el = document.getElementById('crumble-mode-check');
+        if(el) {
+            isCrumbleMode = el.checked;
+            updateHighScoreDisplay();
+        }
+    }
+
+    // チェックボックスの設定をDOMから取得する関数
+    function setupCrumbleToggle() {
+        const el = document.getElementById('crumble-mode-check');
+        if(el) {
+            el.onclick = null; // 重複防止のため一旦クリア
+            el.onclick = (e) => {
+                // 変数には入れず、表示更新のみに使う（変数はstartGameで確定）
+                const checked = e.target.checked;
+                const currentBest = checked ? highScores.crumble : highScores.normal;
+                highScoreEl.textContent = currentBest.toLocaleString();
+            };
+        }
+    }
+
+    // ハイスコア表示の更新
+    function updateHighScoreDisplay() {
+        // 現在のDOMの状態を見て判断
+        const el = document.getElementById('crumble-mode-check');
+        if(el) {
+            const checked = el.checked;
+            const currentBest = checked ? highScores.crumble : highScores.normal;
+            highScoreEl.textContent = currentBest.toLocaleString();
+        }
     }
 
     function createStage() {
@@ -729,11 +778,17 @@
                 
                 if (x > 20 && x < width - 20) {
                     const peg = Bodies.circle(x, y, CONFIG.pegSize, {
-                        isStatic: true, label: 'peg', restitution: 0.8, 
+                        isStatic: true, 
+                        label: 'peg', 
+                        restitution: 0.8, 
                         render: { 
                             fillStyle: '#004444', 
                             strokeStyle: '#00ffcc', 
                             lineWidth: 2
+                        },
+                        plugin: {
+                            maxHealth: CONFIG.pegHealth,
+                            health: CONFIG.pegHealth
                         }
                     });
                     Composite.add(world, peg);
@@ -755,8 +810,13 @@
     function startGame() {
         if (isPlaying) return;
         Sound.init();
+        
+        // ★重要: スタートボタンを押した瞬間のDOM状態を「正」とする
+        const el = document.getElementById('crumble-mode-check');
+        isCrumbleMode = el ? el.checked : false;
+        
         cleanupBalls();
-        createStage();
+        createStage(); 
         
         score = 0;
         ballCount = 0;
@@ -770,7 +830,6 @@
         lastHopeUsed = false;
         document.body.classList.remove('fever-mode');
         
-        // Reset Stats
         gameStats = { totalBalls: 0, god: 0, superJp: 0, x100: 0, mini: 0 };
         
         updateUI();
@@ -877,7 +936,7 @@
             style = { color: '#aa00ff', note: 20, type: 'sine' }; 
         } else if (type === 'x100') {
             style = { color: '#ff0000', note: -5, type: 'sawtooth' }; 
-        } else if (type === 'gold') { // Last Hope
+        } else if (type === 'gold') { 
             style = { color: '#ffd700', note: 15, type: 'sine' }; 
         } else {
             style = PALETTE[Math.floor(Math.random() * PALETTE.length)];
@@ -944,6 +1003,23 @@
                 const ball = bodyA.label === 'ball' ? bodyA : bodyB;
                 const peg = bodyA.label === 'peg' ? bodyA : bodyB;
 
+                // --- Pin Crumble Logic ---
+                if (isCrumbleMode && peg.plugin && peg.plugin.health > 0) {
+                    peg.plugin.health--;
+                    const hpRatio = peg.plugin.health / peg.plugin.maxHealth;
+                    
+                    if (hpRatio < 0.3) {
+                        peg.render.fillStyle = '#ff0000'; 
+                    } else if (hpRatio < 0.6) {
+                        peg.render.fillStyle = '#cccc00'; 
+                    }
+
+                    if (peg.plugin.health <= 0) {
+                        Composite.remove(world, peg);
+                        return; 
+                    }
+                }
+
                 let hitScore = CONFIG.baseScore;
                 const bType = ball.plugin ? ball.plugin.ballType : 'normal';
 
@@ -951,7 +1027,7 @@
                     hitScore = CONFIG.baseScore * CONFIG.x1000Multiplier;
                 } else if (bType === 'x100') {
                     hitScore = CONFIG.baseScore * CONFIG.x100Multiplier;
-                } else if (bType === 'gold') { // Last Hope
+                } else if (bType === 'gold') {
                     hitScore = CONFIG.baseScore * 10;
                 }
                 
@@ -963,12 +1039,30 @@
                 score += hitScore;
 
                 if (Math.random() > 0.6 || bType === 'x1000' || bType === 'gold') {
-                    peg.render.fillStyle = ball.render.fillStyle;
-                    peg.render.strokeStyle = '#fff';
-                    setTimeout(() => { 
-                        peg.render.fillStyle = '#004444'; 
-                        peg.render.strokeStyle = '#00ffcc';
-                    }, 100);
+                    if (peg.plugin && peg.plugin.health > 0) {
+                        const originalColor = peg.render.fillStyle;
+                        peg.render.fillStyle = ball.render.fillStyle;
+                        peg.render.strokeStyle = '#fff';
+                        setTimeout(() => { 
+                            // 存在確認
+                            if (world.bodies.includes(peg)) {
+                                // ダメージ状態に応じて色を戻す
+                                if(isCrumbleMode) {
+                                    const hpRatio = peg.plugin.health / peg.plugin.maxHealth;
+                                    if (hpRatio < 0.3) {
+                                        peg.render.fillStyle = '#ff0000'; 
+                                    } else if (hpRatio < 0.6) {
+                                        peg.render.fillStyle = '#cccc00'; 
+                                    } else {
+                                        peg.render.fillStyle = '#004444';
+                                    }
+                                } else {
+                                    peg.render.fillStyle = '#004444'; 
+                                }
+                                peg.render.strokeStyle = '#00ffcc';
+                            }
+                        }, 100);
+                    }
                 }
 
                 const rand = Math.random();
@@ -982,7 +1076,6 @@
                     let created = 0;
                     const burst = () => {
                         if (!isPlaying) return; 
-                        // Super JP個数調整 (50)
                         for(let k=0; k<5; k++) { 
                             if(created >= CONFIG.superJackpotCount) return;
                             const spawnT = (bType !== 'normal' && Math.random() < 0.1) ? bType : 'super';
@@ -1028,25 +1121,19 @@
         });
     }
 
-    // ラストホープ発動判定
     function tryLastHope() {
         if (lastHopeUsed || !isPlaying) {
             endGame();
             return;
         }
         
-        // 確率判定
         if (Math.random() < CONFIG.lastHopeChance) {
             lastHopeUsed = true;
             Sound.playLastHope();
-            
-            // 演出
             lastHopeEl.classList.add('last-hope-anim');
             setTimeout(() => {
                 lastHopeEl.classList.remove('last-hope-anim');
             }, 2000);
-            
-            // ボール生成
             spawnBall(window.innerWidth / 2, -20, 'gold');
         } else {
             endGame();
@@ -1056,7 +1143,6 @@
     function handleGameLoop() {
         if (!isPlaying) return;
 
-        // --- 軽量化されたループ ---
         frameCounter++;
         
         if (isFever) {
@@ -1064,14 +1150,12 @@
             if (feverTimeRemaining <= 0) {
                 endFever();
             } else {
-                // FEVER中でもボール0個になったら1個補充（詰み防止）
                 if (ballCount === 0) {
                     spawnBall(window.innerWidth / 2, -20, 'normal');
                 }
             }
         }
 
-        // 間引き処理
         if (frameCounter % 5 === 0) {
             const bodies = Composite.allBodies(world);
             const h = window.innerHeight;
@@ -1090,12 +1174,11 @@
             ballCount = count;
             
             if (hasStarted && ballCount === 0 && !isFever) {
-                // ボールが尽きたらラストホープ判定へ
                 tryLastHope();
             }
         }
         
-        if (engine.timing.timestamp % 200 < 20) { // UI更新頻度
+        if (engine.timing.timestamp % 200 < 20) {
             updateUI();
             updateFeverUI();
         }
@@ -1107,18 +1190,35 @@
         endFever(); 
         finishBtn.style.display = 'none'; 
 
+        const currentBest = isCrumbleMode ? highScores.crumble : highScores.normal;
         let isNewRecord = false;
-        if (score > highScore) {
-            highScore = score;
-            localStorage.setItem('domino_critical_highscore_v17', highScore);
-            highScoreEl.textContent = Number(highScore).toLocaleString();
+        
+        if (score > currentBest) {
             isNewRecord = true;
+            if (isCrumbleMode) {
+                highScores.crumble = score;
+                localStorage.setItem('domino_critical_highscore_crumble', score);
+            } else {
+                highScores.normal = score;
+                localStorage.setItem('domino_critical_highscore_normal', score);
+            }
+            updateHighScoreDisplay();
         }
 
         startBtn.textContent = "RETRY";
         msgArea.innerHTML = '';
         msgArea.appendChild(startBtn);
         
+        const toggleHtml = `
+            <div style="margin-top:10px; font-size:11px; color:#888;">
+                V40: LOGIC FIXED
+            </div>
+            <label class="option-toggle" style="margin-top:15px; display:flex; align-items:center; justify-content:center; color:#ccc; background:rgba(255,255,255,0.1); padding:8px 15px; border-radius:20px;">
+                <input type="checkbox" id="crumble-mode-check" ${isCrumbleMode ? 'checked' : ''}>
+                Enable Pin Crumble (ピン風化)
+            </label>
+        `;
+
         let recordHtml = isNewRecord ? '<div class="new-record">NEW RECORD!!</div>' : '<div style="margin-top:5px; font-size:14px; color:#aaa; font-weight:bold;">RESULT</div>';
         
         const resDiv = document.createElement('div');
@@ -1139,29 +1239,29 @@
                     <div class="stat-item"><span class="stat-label">Mini JP</span><span class="stat-value">${gameStats.mini}</span></div>
                 </div>
             </div>
+            ${toggleHtml}
         `;
         msgArea.appendChild(resDiv);
+
+        // リトライ画面でのイベント再設定
+        setupCrumbleToggle();
 
         msgArea.classList.remove('hidden');
         updateUI();
     }
 
     function updateUI() {
-        // スコア表示の桁数に応じたサイズ調整
         const scoreText = score.toLocaleString();
         scoreEl.textContent = scoreText;
-        
-        // 桁数が多い場合、フォントサイズを動的に下げる
         if (scoreText.length > 13) {
-            scoreEl.style.fontSize = '24px';
+            scoreEl.style.fontSize = '20px';
         } else if (scoreText.length > 10) {
-            scoreEl.style.fontSize = '30px';
+            scoreEl.style.fontSize = '26px';
         } else if (scoreText.length > 8) {
-            scoreEl.style.fontSize = '34px';
+            scoreEl.style.fontSize = '32px';
         } else {
             scoreEl.style.fontSize = '40px';
         }
-        
         ballCountEl.textContent = ballCount;
     }
 
